@@ -7,9 +7,8 @@ app = FastAPI()
 # ===============================
 # CONFIG (ENV VARIABLES)
 # ===============================
-GUPSHUP_API_KEY = os.environ.get("sk_384e6742975b442dbfcf1d715cdc6580")
-SANDBOX_NUMBER = os.environ.get("917834811114")  # ex: 917834811114
-
+GUPSHUP_API_KEY = os.environ.get("GUPSHUP_API_KEY")
+SANDBOX_NUMBER = os.environ.get("SANDBOX_NUMBER")
 # In-memory state (sandbox demo only)
 user_state = {}
 user_data = {}
