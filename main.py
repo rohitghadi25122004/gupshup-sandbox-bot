@@ -4,9 +4,21 @@ import os
 
 app = FastAPI()
 
-META_TOKEN = os.getenv("META_ACCESS_TOKEN")
-PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
-VERIFY_TOKEN = os.getenv("VERIFY_TOKEN")
+# Default configuration values (used if environment variables are not set)
+DEFAULT_META_ACCESS_TOKEN = (
+    "EAAQ7NuZBI7zoBQm3JYZAohAXjtGpx5qW2NVh1woF9ZBkhpHHfeeZBY1vZBnt9Y1TlR8BLYjZAWoji2yn9RhO8qNLDUDalpbwYxlOqniIB156IUx0HCX0ZBmdN7KSlb7IVTUfyg8MM1Ue9QjBMFZCRzLxsfYhn0QJgzOqf6W61syrpqv0fVtqjecdYmlhfL3uwZCtKzwLU9g9ZC9CW44MpuadlM0qaf73GPup7oG6Ha0xho01ARZAuLswi0MrGEWNnZCIzDZBHQyYI9g7lZC2GvRguTkv54tsPs"
+)
+DEFAULT_VERIFY_TOKEN = "wprealestatebot25"
+DEFAULT_PHONE_NUMBER_ID = "927697687099353"
+
+# Read from environment variables, falling back to the defaults above
+META_TOKEN = os.getenv("META_ACCESS_TOKEN", DEFAULT_META_ACCESS_TOKEN)
+PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID", DEFAULT_PHONE_NUMBER_ID)
+# Support both VERIFY_TOKEN and META_VERIFY_TOKEN, with a default fallback
+VERIFY_TOKEN = os.getenv(
+    "VERIFY_TOKEN",
+    os.getenv("META_VERIFY_TOKEN", DEFAULT_VERIFY_TOKEN),
+)
 
 GRAPH_URL = f"https://graph.facebook.com/v22.0/{PHONE_NUMBER_ID}/messages"
 
