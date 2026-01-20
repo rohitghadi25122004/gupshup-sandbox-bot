@@ -1,48 +1,87 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Query
 import requests
 import os
 
 app = FastAPI()
 
 # ===============================
-# CONFIG (ENV VARIABLES)
+# META CONFIG (ENV VARIABLES)
 # ===============================
-GUPSHUP_API_KEY = os.environ.get("GUPSHUP_API_KEY")
-SANDBOX_NUMBER = os.environ.get("SANDBOX_NUMBER")
-# In-memory state (sandbox demo only)
+META_ACCESS_TOKEN = os.environ.get("META_ACCESS_TOKEN")
+PHONE_NUMBER_ID = os.environ.get("PHONE_NUMBER_ID")
+META_VERIFY_TOKEN = os.environ.get("META_VERIFY_TOKEN")
+
+if not META_ACCESS_TOKEN or not PHONE_NUMBER_ID or not META_VERIFY_TOKEN:
+    raise RuntimeError("Missing required Meta environment variables")
+
+# In-memory state (OK for demo/testing)
 user_state = {}
 user_data = {}
 
 # ===============================
-# SEND MESSAGE FUNCTION
+# SEND MESSAGE (META CLOUD API)
 # ===============================
-def send_message(to, text):
-    url = "https://api.gupshup.io/wa/api/v1/msg"
-
-    payload = {
-        "channel": "whatsapp",
-        "source": SANDBOX_NUMBER,
-        "destination": to,
-        "message": f'{{"type":"text","text":"{text}"}}'
-    }
+def send_message(to: str, text: str):
+    url = f"https://graph.facebook.com/v18.0/{PHONE_NUMBER_ID}/messages"
 
     headers = {
-        "apikey": GUPSHUP_API_KEY,
-        "Content-Type": "application/x-www-form-urlencoded"
+        "Authorization": f"Bearer {META_ACCESS_TOKEN}",
+        "Content-Type": "application/json",
     }
 
-    requests.post(url, data=payload, headers=headers)
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": to,
+        "type": "text",
+        "text": {"body": text},
+    }
+
+    res = requests.post(url, json=payload, headers=headers)
+    print("SEND:", res.status_code, res.text)
 
 # ===============================
-# WEBHOOK ENDPOINT
+# META WEBHOOK VERIFICATION (GET)
+# ===============================
+@app.get("/webhook")
+async def verify_webhook(
+    hub_mode: str = Query(None, alias="hub.mode"),
+    hub_challenge: str = Query(None, alias="hub.challenge"),
+    hub_verify_token: str = Query(None, alias="hub.verify_token"),
+):
+    if hub_mode == "subscribe" and hub_verify_token == META_VERIFY_TOKEN:
+        return int(hub_challenge)
+    return "Verification failed"
+
+# ===============================
+# HELPER: EXTRACT META MESSAGE
+# ===============================
+def extract_meta_message(data: dict):
+    try:
+        entry = data["entry"][0]
+        change = entry["changes"][0]
+        value = change["value"]
+
+        if "messages" not in value:
+            return None, None
+
+        message = value["messages"][0]
+        sender = message["from"]
+        text = message["text"]["body"]
+
+        return sender, text.strip()
+    except Exception as e:
+        print("PARSE ERROR:", e)
+        return None, None
+
+# ===============================
+# WEBHOOK ENDPOINT (POST)
 # ===============================
 @app.post("/webhook")
 async def webhook(request: Request):
     data = await request.json()
+    print("INCOMING:", data)
 
-    payload = data.get("payload", {})
-    user = payload.get("sender")
-    text = payload.get("text", "").strip()
+    user, text = extract_meta_message(data)
 
     if not user or not text:
         return {"status": "ignored"}
@@ -53,6 +92,7 @@ async def webhook(request: Request):
     if user not in user_state:
         user_state[user] = "START"
         user_data[user] = {}
+
         send_message(
             user,
             "👋 Welcome!\nWhat are you looking for?\n\n1️⃣ Buy Property\n2️⃣ Rent Property"
@@ -83,6 +123,7 @@ async def webhook(request: Request):
 
     elif state == "CITY":
         user_data[user]["city"] = text
+
         summary = (
             f"✅ Details received:\n"
             f"Type: {user_data[user].get('type')}\n"
@@ -90,6 +131,7 @@ async def webhook(request: Request):
             f"City: {user_data[user].get('city')}\n\n"
             f"Our agent will contact you shortly."
         )
+
         send_message(user, summary)
 
         # CLEAR STATE
