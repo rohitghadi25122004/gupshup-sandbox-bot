@@ -1,68 +1,74 @@
 from fastapi import FastAPI, Request
+from fastapi.responses import PlainTextResponse
 import requests
 import os
+import json
 
 app = FastAPI()
 
 # ===============================
 # ENV VARIABLES (SET IN RENDER)
 # ===============================
-ACCESS_TOKEN = os.environ.get("META_ACCESS_TOKEN")
-PHONE_NUMBER_ID = os.environ.get("PHONE_NUMBER_ID")
-VERIFY_TOKEN = os.environ.get("VERIFY_TOKEN")
+ACCESS_TOKEN = os.getenv("META_ACCESS_TOKEN")
+PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
+VERIFY_TOKEN = os.getenv("META_VERIFY_TOKEN")
 
 GRAPH_URL = f"https://graph.facebook.com/v22.0/{PHONE_NUMBER_ID}/messages"
 
 
 # ===============================
-# SEND MESSAGE
+# SEND MESSAGE FUNCTION
 # ===============================
-def send_message(to, text):
+def send_message(to: str, text: str):
     payload = {
         "messaging_product": "whatsapp",
         "to": to,
         "type": "text",
-        "text": {"body": text}
+        "text": {"body": text},
     }
 
     headers = {
         "Authorization": f"Bearer {ACCESS_TOKEN}",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
     }
 
-    r = requests.post(GRAPH_URL, json=payload, headers=headers)
-    print("SEND STATUS:", r.status_code, r.text)
+    response = requests.post(GRAPH_URL, json=payload, headers=headers)
+
+    print("SEND STATUS:", response.status_code)
+    print("SEND RESPONSE:", response.text)
 
 
 # ===============================
-# WEBHOOK VERIFY (META REQUIRED)
+# WEBHOOK VERIFICATION (GET)
 # ===============================
 @app.get("/webhook")
 async def verify_webhook(request: Request):
-    params = request.query_params
+    mode = request.query_params.get("hub.mode")
+    token = request.query_params.get("hub.verify_token")
+    challenge = request.query_params.get("hub.challenge")
 
-    if (
-        params.get("hub.mode") == "subscribe"
-        and params.get("hub.verify_token") == VERIFY_TOKEN
-    ):
-        return int(params.get("hub.challenge"))
+    if mode == "subscribe" and token == VERIFY_TOKEN:
+        # MUST return plain text (not JSON)
+        return PlainTextResponse(content=challenge, status_code=200)
 
-    return {"status": "verification failed"}
+    return PlainTextResponse(content="Forbidden", status_code=403)
 
 
 # ===============================
-# WEBHOOK RECEIVE MESSAGE
+# WEBHOOK RECEIVER (POST)
 # ===============================
 @app.post("/webhook")
 async def receive_webhook(request: Request):
-    data = await request.json()
-    print("INCOMING:", data)
+    body = await request.json()
+    print("INCOMING WEBHOOK:")
+    print(json.dumps(body, indent=2))
 
     try:
-        entry = data["entry"][0]
+        entry = body["entry"][0]
         change = entry["changes"][0]
         value = change["value"]
 
+        # Ignore status-only webhooks
         if "messages" not in value:
             return {"status": "ignored"}
 
@@ -70,11 +76,13 @@ async def receive_webhook(request: Request):
         sender = message["from"]
         text = message["text"]["body"]
 
-        print("FROM:", sender, "TEXT:", text)
+        print(f"FROM: {sender}")
+        print(f"TEXT: {text}")
 
+        # Auto-reply
         send_message(sender, f"👋 Hi! You said: {text}")
 
     except Exception as e:
-        print("ERROR:", e)
+        print("ERROR PROCESSING WEBHOOK:", e)
 
     return {"status": "ok"}
